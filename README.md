@@ -21,6 +21,8 @@ The agent then:
 ## Quick start
 
 ```bash
+git clone https://github.com/m-bhavyaa/gopratle-agent.git
+cd gopratle-agent
 pip install -r requirements.txt
 cp .env.example .env        # then fill in your keys (see EXPLAINED.md, section 7)
 

@@ -255,8 +255,8 @@ You need Python 3.10 or newer.
 
 ### 7.1 Install
 ```bash
-git clone <this repo>
-cd gopratle-bdr-agent
+git clone https://github.com/m-bhavyaa/gopratle-agent.git
+cd gopratle-agent
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
