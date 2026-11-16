@@ -11,10 +11,10 @@ def get(name, default=""):
     return os.getenv(name, default).strip()
 
 
-# AI model (any OpenAI-compatible provider: Groq, OpenAI, Gemini, ...)
+# AI model via OpenRouter. "openrouter/free" automatically picks one of the free models.
 LLM_API_KEY = get("LLM_API_KEY")
-LLM_BASE_URL = get("LLM_BASE_URL", "https://api.groq.com/openai/v1")
-LLM_MODEL = get("LLM_MODEL", "llama-3.3-70b-versatile")
+LLM_BASE_URL = get("LLM_BASE_URL", "https://openrouter.ai/api/v1")
+LLM_MODEL = get("LLM_MODEL", "openrouter/free")
 
 # Google Sheet
 GOOGLE_CREDENTIALS_FILE = get("GOOGLE_CREDENTIALS_FILE", "credentials.json")

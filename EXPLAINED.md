@@ -84,7 +84,7 @@ what to do next with every row, even after a restart.
 |---|---|---|---|
 | Language | **Python script** | Easy to read, every step is visible, free, runs anywhere. A reviewer can read the whole thing in 10 minutes. | n8n / Make (visual, but harder to version-control and to customise the AI logic) |
 | Web search | **`ddgs` library** (searches Google/Bing/DuckDuckGo) | Free, no API key | Tavily, SerpAPI, Serper (more reliable, paid after free tier) |
-| Pick the lead / write pitch | **LLM through the OpenAI-compatible API**, default **Groq** (free tier) | One code path works with Groq, OpenAI, Gemini, etc. Change 3 lines in `.env` to switch. | Hard-coded rules (worse at reading messy search results) |
+| Pick the lead / write pitch | **LLM through OpenRouter**, default model `openrouter/free` | OpenRouter gives one API key for hundreds of models, and some are free. `openrouter/free` picks an available free model for each request, so the agent keeps working when a specific free model is retired. It speaks the OpenAI API format, so switching to a paid model is a one-line change in `.env`. | Hard-coded rules (worse at reading messy search results), OpenAI / Gemini directly (paid or separate keys) |
 | Email lookup | **Hunter.io** (optional) + fallback guess `first.last@domain` | Hunter has a free tier. The fallback means the demo works with no key. | Apollo, Snov.io, Clearbit |
 | Database / dashboard | **Google Sheets** via `gspread` | The task asks for it, and the team can see and edit it | Airtable, a real database |
 | Sending email | **SMTP to Mailtrap Email Sandbox** | Mailtrap catches every email in a test inbox and delivers nothing, so no real person is spammed | Gmail SMTP, SendGrid, Resend |
@@ -184,10 +184,17 @@ Loads `.env` with `python-dotenv` and exposes each setting as a variable, e.g. `
 Every other file imports settings from here, so there are no secrets in the code.
 
 ### `llm.py`
-- `_get_client()` creates the OpenAI client once, pointed at `LLM_BASE_URL`. Because Groq,
-  OpenAI and Gemini all speak the same "OpenAI-compatible" API, the same code works with all of them.
-- `ask(prompt, want_json=False)` sends one message and returns the text. With `want_json=True`
-  it asks the model for JSON mode and turns the answer into a Python dict.
+- `_get_client()` creates the client once, pointed at OpenRouter (`LLM_BASE_URL`). We use the
+  `openai` Python library because OpenRouter accepts the same request format as OpenAI.
+  The two extra headers (`HTTP-Referer`, `X-Title`) are optional; they only label the app on
+  OpenRouter's dashboard.
+- `_clean(text)`: some free models "think out loud" inside `<think>...</think>` or wrap JSON in
+  ```` ```json ```` fences. This removes both.
+- `_to_json(text)`: finds the `{ ... }` part of the answer and turns it into a Python dict, even if
+  the model wrote a sentence before or after it.
+- `ask(prompt, want_json=False)` sends one message and returns the text (or a dict with
+  `want_json=True`, which also asks the model for JSON mode). Free models are sometimes busy
+  (HTTP 429 "too many requests"), so it **retries up to 3 times**, waiting 5 s then 10 s.
   `temperature=0.3` keeps answers fairly consistent.
 
 ### `research.py`
@@ -263,12 +270,16 @@ pip install -r requirements.txt
 cp .env.example .env               # Windows: copy .env.example .env
 ```
 
-### 7.2 AI key (free, Groq)
-1. Go to https://console.groq.com/keys and sign up.
-2. Create an API key and paste it as `LLM_API_KEY` in `.env`.
+### 7.2 AI key (free, OpenRouter)
+1. Sign up at https://openrouter.ai (no credit card needed).
+2. Go to https://openrouter.ai/keys, click **Create Key**, and paste it as `LLM_API_KEY` in `.env`.
+   Keep `LLM_BASE_URL=https://openrouter.ai/api/v1` and `LLM_MODEL=openrouter/free`.
 3. Check it works: `python main.py test "Zomato" "Gurgaon"`
-   (if Groq has retired the default model, pick a current one from https://console.groq.com/docs/models
-   and set `LLM_MODEL`).
+4. Free limits: 20 requests per minute and 50 per day (1,000 per day after a one-time $10 credit
+   purchase). Each lead uses 2 AI calls, so that's about 25 leads a day for free.
+5. Optional: if answers from random free models vary too much, pin one free model, e.g.
+   `LLM_MODEL=google/gemma-4-31b-it:free`. The current list is at
+   https://openrouter.ai/models?max_price=0 (free models change often).
 
 ### 7.3 Google Sheet + service account
 A **service account** is a "robot Google user" that the script logs in as.
@@ -329,6 +340,7 @@ Be ready to say these yourself. Interviewers like candidates who know the weak s
 
 | Limitation | Improvement |
 |---|---|
+| OpenRouter free models: 50 requests/day, quality varies by which model is picked | Pin one good free model, or use a cheap paid model for steady quality and no daily cap |
 | Free web search can be flaky or rate-limited | Use a paid search API (Tavily / SerpAPI) or Apollo's people search |
 | LinkedIn snippets can be out of date (person may have left) | Verify with a second source, show a confidence score, have a human approve before sending |
 | Guessed emails can bounce | Hunter / Apollo verification, or skip sending when the email is only a guess |
@@ -377,9 +389,16 @@ Mailtrap sandbox catches all emails, `TEST_RECIPIENT` redirects every email, the
 mode without SMTP, and secrets stay in `.env` (git-ignored).
 
 **Q: How much does it cost?**
-Zero for the demo: Groq free tier, free search, Google Sheets, Mailtrap free, Telegram free.
-In production, the main costs would be a reliable search/enrichment API and the LLM, which is
-a fraction of a cent per lead with a small model.
+Zero for the demo: OpenRouter free models, free search, Google Sheets, Mailtrap free, Telegram free.
+In production, the main costs would be a reliable search/enrichment API and the LLM. With
+OpenRouter I'd switch `LLM_MODEL` to a small paid model, which costs a fraction of a cent per lead
+and removes the 50-requests-a-day free limit.
+
+**Q: Why OpenRouter?**
+One key gives access to many models, including free ones. `openrouter/free` routes to whichever
+free model is available, so the demo doesn't break when one model is retired. Because it uses the
+OpenAI request format, moving to GPT, Claude or Gemini later only changes `LLM_MODEL`.
+Because free models differ in quality, I added retries and JSON cleanup in `llm.py`.
 
 **Q: How would you scale it to 1,000 leads a day?**
 Replace polling with webhooks or a queue, run searches in parallel with rate limits, use a paid
@@ -396,7 +415,7 @@ with doing it by hand.
 
 - **BDR**: Business Development Representative, the salesperson who finds and first contacts leads.
 - **Lead enrichment**: adding details (name, title, email, LinkedIn) to a basic lead like "Zomato, Gurgaon".
-- **LLM**: Large Language Model, the AI (here Llama on Groq) that reads text and writes text.
+- **LLM**: Large Language Model, the AI (here a free model via OpenRouter) that reads text and writes text.
 - **Prompt**: the instructions and data we send to the LLM.
 - **JSON**: a simple text format for structured data: `{"name": "Rohit"}`.
 - **API**: a way for programs to talk to a service over the internet.
